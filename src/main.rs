@@ -31,6 +31,8 @@ struct Credentials {
     secret_access_key: String,
     #[serde(rename = "SessionToken")]
     session_token: String,
+    #[serde(rename = "Expiration")]
+    expiration: String,
 }
 
 fn fetch_accounts(path: &PathBuf) -> Vec<String> {
@@ -61,7 +63,12 @@ fn fetch_mfa_devices(account_name: &str) -> Vec<String> {
         .collect::<Vec<_>>()
 }
 
-fn fetch_credentials(account_name: &str, mfa_arn: &str, token: &str) -> Credentials {
+fn fetch_credentials(
+    account_name: &str,
+    mfa_arn: &str,
+    token: &str,
+    duration_seconds: &str,
+) -> Credentials {
     let mut session_cmd = Command::new("aws");
     let session_output = session_cmd
         .args(vec![
@@ -73,6 +80,8 @@ fn fetch_credentials(account_name: &str, mfa_arn: &str, token: &str) -> Credenti
             mfa_arn,
             "--token-code",
             token,
+            "--duration-seconds",
+            duration_seconds,
         ])
         .output()
         .expect("Failed");
@@ -87,7 +96,7 @@ fn write_profile(
     path: &PathBuf,
     credentials: &Credentials,
     account_name: &str,
-) -> std::io::Result<()> {
+) -> std::io::Result<String> {
     let key = format!("{}_mfa-authorized", account_name);
 
     let mut conf = Ini::load_from_file(&path).expect("Failed to load credentials file");
@@ -99,7 +108,7 @@ fn write_profile(
     // Write back to disk
     conf.write_to_file(&path)?;
 
-    Ok(())
+    Ok(credentials.expiration.clone())
 }
 
 fn main() -> std::io::Result<()> {
@@ -126,10 +135,10 @@ fn main() -> std::io::Result<()> {
     println!("");
 
     println!("Getting session...");
-    let credentials = fetch_credentials(account_name, mfa_arn, &token);
+    let credentials = fetch_credentials(account_name, mfa_arn, &token, "900");
 
-    write_profile(&path, &credentials, &account_name)?;
+    let expiration = write_profile(&path, &credentials, &account_name)?;
 
-    println!("Success");
+    println!("Success: expires {}", expiration);
     Ok(())
 }
